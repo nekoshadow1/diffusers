@@ -53,8 +53,6 @@ from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
-from SyncDreamer.modules import FrozenCLIPImageEmbedder
-
 from omegaconf import OmegaConf
 from skimage.io import imsave
 
@@ -699,14 +697,14 @@ def main(args):
     )
     
     cfg = 'SyncDreamer/configs/syncdreamer.yaml'
-    dreamer = load_model(cfg, '/home/jupyter/SyncDreamer/ckpt/syncdreamer-pretrain.ckpt', strict=True)
+    dreamer = load_model(cfg, 'SyncDreamer/ckpt/syncdreamer-pretrain.ckpt', strict=True)
     
     if args.controlnet_model_name_or_path:
         logger.info("Loading existing controlnet weights")
         controlnet = ControlNetModelSync.from_pretrained(args.controlnet_model_name_or_path)
     else:
         logger.info("Initializing controlnet weights from unet")
-        controlnet = ControlNetModelSync.from_unet(vae.model.diffusion_model)
+        controlnet = ControlNetModelSync.from_unet(dreamer.model.diffusion_model)
     
     # `accelerate` 0.16.0 will have better support for customized saving
     if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
@@ -840,7 +838,7 @@ def main(args):
         weight_dtype = torch.bfloat16
 
     # Move vae, unet and text_encoder to device and cast to weight_dtype
-    vae.to(accelerator.device, dtype=weight_dtype)
+    dreamer.to(accelerator.device, dtype=weight_dtype)
     text_encoder.to(accelerator.device, dtype=weight_dtype)
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
@@ -963,7 +961,7 @@ def main(args):
         for step, batch in enumerate(train_dataloader):
             with accelerator.accumulate(controlnet):     
                 with torch.autocast("cuda"):
-                    x, clip_embed, input_info = vae.prepare(batch, weight_dtype=weight_dtype)
+                    x, clip_embed, input_info = dreamer.prepare(batch, weight_dtype=weight_dtype)
                     
                     # Sample a random timestep for each image
                     bsz = x.shape[0]
@@ -972,7 +970,7 @@ def main(args):
 
                     # Add noise to the latents according to the noise magnitude at each timestep
                     # (this is the forward diffusion process)
-                    noisy_latents, noise = vae.add_noise(x, timesteps)
+                    noisy_latents, noise = dreamer.add_noise(x, timesteps)
 
                     N = 16
                     B = bsz
@@ -980,10 +978,10 @@ def main(args):
                     target_index = np.reshape(target_index, (B, 1))
                     target_index = torch.from_numpy(target_index).to(x.device).long()
 
-                    v_embed = vae.get_viewpoint_embedding(B, input_info['elevation']) # N,v_dim
-                    t_embed = vae.embed_time(timesteps)
-                    spatial_volume = vae.spatial_volume.construct_spatial_volume(noisy_latents, t_embed, v_embed, vae.poses, vae.Ks)
-                    clip_embed, volume_feats, x_concat = vae.get_target_view_feats(input_info['x'], spatial_volume, clip_embed, t_embed, v_embed, target_index)
+                    v_embed = dreamer.get_viewpoint_embedding(B, input_info['elevation']) # N,v_dim
+                    t_embed = dreamer.embed_time(timesteps)
+                    spatial_volume = dreamer.spatial_volume.construct_spatial_volume(noisy_latents, t_embed, v_embed, dreamer.poses, dreamer.Ks)
+                    clip_embed, volume_feats, x_concat = dreamer.get_target_view_feats(input_info['x'], spatial_volume, clip_embed, t_embed, v_embed, target_index)
 
                     noisy_latents = noisy_latents[torch.arange(B)[:,None], 0][:,0]
                 
@@ -1005,7 +1003,7 @@ def main(args):
                     )
                     
                     # Predict the noise
-                    model_pred = vae.model.diffusion_model(x_noisy_, timesteps, clip_embed, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats)
+                    model_pred = dreamer.model.diffusion_model(x_noisy_, timesteps, clip_embed, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats)
                     
                     # Get the target for loss
                     target = noise[torch.arange(B)[:,None],target_index][:,0] # B,4,H,W

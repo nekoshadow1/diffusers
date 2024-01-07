@@ -77,10 +77,10 @@ You may download other splits [here](https://connecthkuhk-my.sharepoint.com/pers
 
 ```bash
 export CKPT_PATH='SyncDreamer/ckpt'
-mkdir CKPT_PATH
+mkdir $CKPT_PATH
 gdown https://drive.google.com/uc?id=1n5jE1gY1ARQNRBn1n4meXJqRSH8MaJhF
-mv ViT-L-14.ckpt $CKPT_PATH
-gdown https://drive.google.com/uc?id=137MHDPRjWjK7bc9xQKXwbHCtiP1vvvvZ
+mv ViT-L-14.pt $CKPT_PATH
+gdown https://drive.google.com/uc?id=1z8vdOuU0Qxgp6VXEOvMZuSyODwSHQdeT
 mv syncdreamer-pretrain.ckpt $CKPT_PATH
 ```
 
