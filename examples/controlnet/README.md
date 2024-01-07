@@ -67,12 +67,22 @@ export DATA_PATH='/home/jupyter/data/'
 mkdir $DATA_PATH
 python generate_prompts.py --DATA_PATH=$DATA_PATH
 
-rm renderings-v1-220000-230000.tar.gz $ROOT_PATH
+rm renderings-v1-220000-230000.tar.gz
 sudo rm -r renderings-v1
 ```
 
 You may download other splits [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamerData&ga=1).
 
+## Download pretrained SyncDreamer weights
+
+```bash
+export CKPT_PATH='SyncDreamer/ckpt'
+mkdir CKPT_PATH
+gdown https://drive.google.com/uc?id=1n5jE1gY1ARQNRBn1n4meXJqRSH8MaJhF
+mv ViT-L-14.ckpt $CKPT_PATH
+gdown https://drive.google.com/uc?id=137MHDPRjWjK7bc9xQKXwbHCtiP1vvvvZ
+mv syncdreamer-pretrain.ckpt $CKPT_PATH
+```
 
 ## Training
 
