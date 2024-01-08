@@ -507,6 +507,7 @@ def make_train_dataset(args, tokenizer, accelerator):
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
     column_names = dataset["train"].column_names
+    
     target_index_column = None
     if len(column_names) == 4:
         target_index_column = column_names[3]
@@ -577,14 +578,27 @@ def make_train_dataset(args, tokenizer, accelerator):
             transforms.ToTensor(),
         ]
     )
-
+    
+    def read_img(image_path):
+        image_path = os.path.join(args.train_data_dir, image_path)
+        image = Image.open(image_path)
+        return image
+            
     def preprocess_train(examples):
-        images = [image.convert("RGB") for image in examples[image_column]]
-        images = [image_transforms(image) for image in images]
+        if type(examples[image_column][0]) == str:
+            images = [read_img(image).convert("RGB") for image in examples[image_column]]
+            images = [image_transforms(image) for image in images]
 
-        conditioning_images = [image.convert("RGB") for image in examples[conditioning_image_column]]
-        conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
-        
+            conditioning_images = [read_img(image).convert("RGB") for image in examples[conditioning_image_column]]
+            conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
+            
+        else:
+            images = [image.convert("RGB") for image in examples[image_column]]
+            images = [image_transforms(image) for image in images]
+
+            conditioning_images = [image.convert("RGB") for image in examples[conditioning_image_column]]
+            conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
+
         if target_index_column is not None:
             target_indexes = [target_index for target_index in examples[target_index_column]]
             examples["target_indexes"] = target_indexes

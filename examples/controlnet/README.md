@@ -4,6 +4,11 @@
 
 This example is based on the [training example in the original ControlNet repository](https://github.com/lllyasviel/ControlNet/blob/main/docs/train.md). It trains a ControlNet to fill circles using a [small synthetic dataset](https://huggingface.co/datasets/fusing/fill50k).
 
+## System requirements
+
+CUDA 11.3
+conda
+
 ## Installing the dependencies
 
 Before running the scripts, make sure to install the library's training dependencies:
@@ -15,7 +20,7 @@ To make sure you can successfully run the latest versions of the example scripts
 ```bash
 conda create -n controlnet python=3.8
 conda activate controlnet
-git clone https://github.com/huggingface/diffusers
+git clone https://github.com/nekoshadow1/diffusers.git
 cd diffusers
 pip install -e .
 ```
@@ -72,6 +77,13 @@ sudo rm -r renderings-v1
 ```
 
 You may download other splits [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamerData&ga=1).
+
+(Important) Also remember to put the following script (syncdreamer.py) in DATA_PATH, and modify three variables `METADATA_URL`, `IMAGES_URL`, `CONDITIONING_IMAGES_URL` in line 22-24 accordingly:
+
+```bash
+gdown https://drive.google.com/uc?id=1IoPCGQfmWEKUN8nF5HdZTXqRIYzCij22
+mv syncdreamer.py $DATA_PATH
+```
 
 ## Download pretrained SyncDreamer weights
 
