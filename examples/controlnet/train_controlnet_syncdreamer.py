@@ -649,7 +649,6 @@ def load_model(cfg,ckpt,strict=True):
     print(f'loading model from {ckpt} ...')
     ckpt = torch.load(ckpt,map_location='cpu')
     model.load_state_dict(ckpt['state_dict'],strict=strict)
-    # model = model.cuda().eval()
     return model
     
 def main(args):

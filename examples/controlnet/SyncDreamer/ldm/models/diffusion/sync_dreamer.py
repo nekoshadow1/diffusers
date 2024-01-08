@@ -386,14 +386,14 @@ class SyncMultiviewDiffusion(pl.LightningModule):
     def prepare(self, batch, weight_dtype=torch.float32):
         # encode target
         if 'pixel_values' in batch:
-            image_target = batch['pixel_values'][:, None, :, :, :]
+            image_target = batch['pixel_values'][:, None, :, :, :].to(dtype=weight_dtype)
             N = self.view_num
             x = [self.encode_first_stage(image_target[:,0], True) for ni in range(N)]
             x = torch.stack(x, 1) # b,n,4,h//8,w//8
         else:
             x = None
 
-        image_input = batch['conditioning_pixel_values']
+        image_input = batch['conditioning_pixel_values'].to(dtype=weight_dtype)
 
         B = image_input.shape[0]
         elevations = np.array([30] * B)

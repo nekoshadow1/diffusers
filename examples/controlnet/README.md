@@ -7,6 +7,7 @@ This example is based on the [training example in the original ControlNet reposi
 ## System requirements
 
 CUDA 11.3
+
 conda
 
 ## Installing the dependencies
@@ -50,12 +51,6 @@ Or if your environment doesn't support an interactive shell e.g. a notebook
 ```python
 from accelerate.utils import write_basic_config
 write_basic_config()
-```
-
-(Optional) Install bitsandbytes
-
-```bash
-pip install bitsandbytes
 ```
 
 ## Download training dataset
