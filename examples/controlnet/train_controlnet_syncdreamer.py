@@ -5,6 +5,13 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
+##!/usr/bin/env python
+# coding=utf-8
+# Copyright 2023 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -26,6 +33,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
+import torchvision
 import transformers
 from accelerate import Accelerator
 from accelerate.logging import get_logger
@@ -37,6 +45,7 @@ from PIL import Image
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig
+from einops import rearrange
 
 import diffusers
 from diffusers import (
@@ -52,6 +61,8 @@ from controlnet_sync import ControlNetModelSync
 from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
+
+from SyncDreamer.modules import FrozenCLIPImageEmbedder
 
 from omegaconf import OmegaConf
 from skimage.io import imsave
@@ -73,7 +84,6 @@ check_min_version("0.25.0.dev0")
 
 logger = get_logger(__name__)
 
-
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
     text_encoder_config = PretrainedConfig.from_pretrained(
         pretrained_model_name_or_path,
@@ -92,21 +102,6 @@ def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: st
         return RobertaSeriesModelWithTransformation
     else:
         raise ValueError(f"{model_class} is not supported.")
-
-
-# def save_model_card(repo_id: str, image_logs=None, base_model=str, repo_folder=None):
-#     img_str = ""
-#     if image_logs is not None:
-#         img_str = "You can find some example images below.\n"
-#         for i, log in enumerate(image_logs):
-#             images = log["images"]
-#             validation_prompt = log["validation_prompt"]
-#             validation_image = log["validation_image"]
-#             validation_image.save(os.path.join(repo_folder, "image_control.png"))
-#             img_str += f"prompt: {validation_prompt}\n"
-#             images = [validation_image] + images
-#             image_grid(images, 1, len(images)).save(os.path.join(repo_folder, f"images_{i}.png"))
-#             img_str += f"![images_{i})](./images_{i}.png)\n"
 
 #     yaml = f"""
 # ---
@@ -127,6 +122,9 @@ def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: st
 # These are controlnet weights trained on {base_model} with new type of conditioning.
 # {img_str}
 # """
+#     with open(os.path.join(repo_folder, "README.md"), "w") as f:
+#         f.write(yaml + model_card)
+
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Simple example of a ControlNet training script.")
@@ -481,7 +479,6 @@ def parse_args(input_args=None):
 
     return args
 
-
 def make_train_dataset(args, tokenizer, accelerator):
     # Get the datasets: you can either provide your own training and evaluation files (see below)
     # or specify a Dataset from the hub (the dataset will be downloaded automatically from the datasets Hub).
@@ -507,11 +504,14 @@ def make_train_dataset(args, tokenizer, accelerator):
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
     column_names = dataset["train"].column_names
+    print('column_names:', column_names)
     
     target_index_column = None
-    if len(column_names) == 4:
+    target_images_column = None
+    if len(column_names) == 5:
         target_index_column = column_names[3]
-
+        target_images_column = column_names[4]
+        
     # 6. Get the column names for input/target.
     if args.image_column is None:
         image_column = column_names[0]
@@ -562,46 +562,25 @@ def make_train_dataset(args, tokenizer, accelerator):
         )
         return inputs.input_ids
 
-    image_transforms = transforms.Compose(
-        [
-            transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.CenterCrop(args.resolution),
-            transforms.ToTensor(),
-            transforms.Normalize([0.5], [0.5]),
-        ]
-    )
-
-    conditioning_image_transforms = transforms.Compose(
-        [
-            transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.CenterCrop(args.resolution),
-            transforms.ToTensor(),
-        ]
-    )
-    
-    def read_img(image_path):
-        image_path = os.path.join(args.train_data_dir, image_path)
-        image = Image.open(image_path)
-        return image
-            
+    image_transforms = []
+    image_transforms.extend([transforms.ToTensor(), transforms.Lambda(lambda x: rearrange(x * 2. - 1., 'c h w -> h w c'))])
+    image_transforms = transforms.Compose(image_transforms)
+        
     def preprocess_train(examples):
-        if type(examples[image_column][0]) == str:
-            images = [read_img(image).convert("RGB") for image in examples[image_column]]
-            images = [image_transforms(image) for image in images]
+        
+        images = [image.convert("RGB") for image in examples[image_column]]
+        images = [image_transforms(image) for image in images]
 
-            conditioning_images = [read_img(image).convert("RGB") for image in examples[conditioning_image_column]]
-            conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
-            
-        else:
-            images = [image.convert("RGB") for image in examples[image_column]]
-            images = [image_transforms(image) for image in images]
-
-            conditioning_images = [image.convert("RGB") for image in examples[conditioning_image_column]]
-            conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
-
+        conditioning_images = [image.convert("RGB") for image in examples[conditioning_image_column]]
+        # conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
+        conditioning_images = [image_transforms(image) for image in conditioning_images]
+        
         if target_index_column is not None:
             target_indexes = [target_index for target_index in examples[target_index_column]]
             examples["target_indexes"] = target_indexes
+        if target_images_column is not None:
+            target_images = [[image_transforms(Image.open(os.path.join(args.train_data_dir, image)).convert("RGB")) for image in eval(target_images_)] for target_images_ in examples[target_images_column]]
+            examples["target_images"] = target_images
 
         examples["pixel_values"] = images
         examples["conditioning_pixel_values"] = conditioning_images
@@ -628,13 +607,19 @@ def collate_fn(examples):
     input_ids = torch.stack([example["input_ids"] for example in examples])
     
     if "target_indexes" in examples[0]:
+        # print('examples[0]:', examples[0]["target_images"])
         target_indexes = [example["target_indexes"] for example in examples]
+        
+        target_images = [torch.stack([e for e in example["target_images"]]) for example in examples]
+        target_images = [t.to(memory_format=torch.contiguous_format).float() for t in target_images]
+        target_images = torch.stack(target_images, 0)
         
         return {
             "pixel_values": pixel_values,
             "conditioning_pixel_values": conditioning_pixel_values,
             "input_ids": input_ids,
-            "target_indexes": target_indexes
+            "target_indexes": target_indexes,
+            "target_images": target_images,
         }
     else:
         return {
@@ -649,6 +634,7 @@ def load_model(cfg,ckpt,strict=True):
     print(f'loading model from {ckpt} ...')
     ckpt = torch.load(ckpt,map_location='cpu')
     model.load_state_dict(ckpt['state_dict'],strict=strict)
+    # model = model.cuda().eval()
     return model
     
 def main(args):
@@ -699,25 +685,15 @@ def main(args):
         # from transformers import BertTokenizerFast  # TODO: add to reuquirements
         # tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
 
-    # import correct text encoder class
-    text_encoder_cls = import_model_class_from_model_name_or_path(args.pretrained_model_name_or_path, args.revision)
-
-    # Load scheduler and models
-    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
-    
-    text_encoder = text_encoder_cls.from_pretrained(
-        args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision, variant=args.variant
-    )
-    
     cfg = 'SyncDreamer/configs/syncdreamer.yaml'
-    dreamer = load_model(cfg, 'SyncDreamer/ckpt/syncdreamer-pretrain.ckpt', strict=True)
+    vae = load_model(cfg, '/home/jupyter/SyncDreamer/ckpt/syncdreamer-pretrain.ckpt', strict=True)
     
     if args.controlnet_model_name_or_path:
         logger.info("Loading existing controlnet weights")
         controlnet = ControlNetModelSync.from_pretrained(args.controlnet_model_name_or_path)
     else:
         logger.info("Initializing controlnet weights from unet")
-        controlnet = ControlNetModelSync.from_unet(dreamer.model.diffusion_model)
+        controlnet = ControlNetModelSync.from_unet(vae.model.diffusion_model)
     
     # `accelerate` 0.16.0 will have better support for customized saving
     if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
@@ -750,8 +726,7 @@ def main(args):
         accelerator.register_save_state_pre_hook(save_model_hook)
         accelerator.register_load_state_pre_hook(load_model_hook)
 
-    dreamer.requires_grad_(False)
-    text_encoder.requires_grad_(False)
+    vae.requires_grad_(False)
     controlnet.train()
 
     if args.enable_xformers_memory_efficient_attention:
@@ -763,6 +738,7 @@ def main(args):
                 logger.warn(
                     "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
                 )
+            # unet.enable_xformers_memory_efficient_attention()
             controlnet.enable_xformers_memory_efficient_attention()
         else:
             raise ValueError("xformers is not available. Make sure it is installed correctly")
@@ -851,8 +827,7 @@ def main(args):
         weight_dtype = torch.bfloat16
 
     # Move vae, unet and text_encoder to device and cast to weight_dtype
-    dreamer.to(accelerator.device, dtype=weight_dtype)
-    text_encoder.to(accelerator.device, dtype=weight_dtype)
+    vae.to(accelerator.device, dtype=weight_dtype)
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -933,6 +908,16 @@ def main(args):
         return drop_clip, drop_volume, drop_concat, drop_all
 
     def unet_wrapper_forward(x, t, clip_embed, volume_feats, x_concat, is_train=False):
+        """
+
+        @param x:             B,4,H,W
+        @param t:             B,
+        @param clip_embed:    B,M,768
+        @param volume_feats:  B,C,D,H,W
+        @param x_concat:      B,C,H,W
+        @param is_train:
+        @return:
+        """
         drop_conditions = False
         if drop_conditions and is_train:
             B = x.shape[0]
@@ -960,6 +945,34 @@ def main(args):
         x = torch.cat([x, x_concat_], 1)
 
         return x, t, clip_embed, volume_feats
+    
+    def unet_wrapper_forward_unconditional(x, t, clip_embed, volume_feats, x_concat):
+        """
+
+        @param x:             B,4,H,W
+        @param t:             B,
+        @param clip_embed:    B,M,768
+        @param volume_feats:  B,C,D,H,W
+        @param x_concat:      B,C,H,W
+        @param is_train:
+        @return:
+        """
+        x_ = torch.cat([x] * 2, 0)
+        t_ = torch.cat([t] * 2, 0)
+        clip_embed_ = torch.cat([clip_embed, torch.zeros_like(clip_embed)], 0)
+
+        v_ = {}
+        for k, v in volume_feats.items():
+            v_[k] = torch.cat([v, torch.zeros_like(v)], 0)
+
+        x_concat_ = torch.cat([x_concat, torch.zeros_like(x_concat)], 0)
+        use_zero_123 = True
+        if use_zero_123:
+            # zero123 does not multiply this when encoding, maybe a bug for zero123
+            first_stage_scale_factor = 0.18215
+            x_concat_[:, :4] = x_concat_[:, :4] / first_stage_scale_factor
+        x_ = torch.cat([x_, x_concat_], 1)
+        return x_, t_, clip_embed_, v_
         
     progress_bar = tqdm(
         range(0, args.max_train_steps),
@@ -972,57 +985,54 @@ def main(args):
     image_logs = None
     for epoch in range(first_epoch, args.num_train_epochs):
         for step, batch in enumerate(train_dataloader):
-            with accelerator.accumulate(controlnet):     
+            with accelerator.accumulate(controlnet):
+                # Convert images to latent space   
                 with torch.autocast("cuda"):
-                    x, clip_embed, input_info = dreamer.prepare(batch, weight_dtype=weight_dtype)
-                    
-                    # Sample a random timestep for each image
+                    x, clip_embed, input_info = vae.prepare(batch)
+
+                    # Sample noise that we'll add to the latents
                     bsz = x.shape[0]
+                    # Sample a random timestep for each image
                     num_timesteps = 1000
                     timesteps = torch.randint(0, num_timesteps, (bsz,), device=x.device).long()
 
                     # Add noise to the latents according to the noise magnitude at each timestep
                     # (this is the forward diffusion process)
-                    noisy_latents, noise = dreamer.add_noise(x, timesteps)
-
+                    x_noisy, noise = vae.add_noise(x, timesteps)
                     N = 16
                     B = bsz
+                
                     target_index = np.array(batch['target_indexes'])
                     target_index = np.reshape(target_index, (B, 1))
                     target_index = torch.from_numpy(target_index).to(x.device).long()
 
-                    v_embed = dreamer.get_viewpoint_embedding(B, input_info['elevation']) # N,v_dim
-                    t_embed = dreamer.embed_time(timesteps)
-                    spatial_volume = dreamer.spatial_volume.construct_spatial_volume(noisy_latents, t_embed, v_embed, dreamer.poses, dreamer.Ks)
-                    clip_embed, volume_feats, x_concat = dreamer.get_target_view_feats(input_info['x'], spatial_volume, clip_embed, t_embed, v_embed, target_index)
+                    v_embed = vae.get_viewpoint_embedding(B, input_info['elevation']) # B, N,v_dim
+                    t_embed = vae.embed_time(timesteps)
+                    spatial_volume = vae.spatial_volume.construct_spatial_volume(x_noisy, t_embed, v_embed, vae.poses, vae.Ks)
+                    
+                    # Replaced v_embed with encoder_hidden_states here since we cannot use target index as input.
+                    clip_embed, volume_feats, x_concat = vae.get_target_view_feats(input_info['x'], spatial_volume, clip_embed, t_embed, v_embed, target_index)
 
-                    noisy_latents = noisy_latents[torch.arange(B)[:,None], 0][:,0]
-                
-                    # Get the text embedding for conditioning   
-                    encoder_hidden_states = text_encoder(batch["input_ids"])[0]
+                    x_noisy_ = x_noisy[torch.arange(B)[:,None],target_index][:,0]
                 
                     controlnet_image = batch["conditioning_pixel_values"].to(dtype=weight_dtype)
-                
-                    x_noisy_, timesteps, clip_embed, volume_feats = unet_wrapper_forward(noisy_latents, timesteps, clip_embed, volume_feats, x_concat, is_train=True)
-                
+                    controlnet_image = controlnet_image.permute(0, 3, 1, 2) # B, c, h, w
+
+                    x_noisy_, timesteps, clip_embed, volume_feats = unet_wrapper_forward(x_noisy_, timesteps, clip_embed, volume_feats, x_concat, is_train=False)
                     down_block_res_samples, mid_block_res_sample = controlnet(
-                        x_noisy_,
-                        timesteps,
+                        x=x_noisy_,
+                        timesteps=timesteps,
                         controlnet_cond=controlnet_image,
                         conditioning_scale=1.0,
-                        context=encoder_hidden_states,
+                        context=clip_embed,
                         return_dict=False,
                         source_dict=volume_feats,
                     )
-                    
-                    # Predict the noise
-                    model_pred = dreamer.model.diffusion_model(x_noisy_, timesteps, clip_embed, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats)
-                    
-                    # Get the target for loss
-                    target = noise[torch.arange(B)[:,None],target_index][:,0] # B,4,H,W
+                    model_pred = vae.model.diffusion_model(x_noisy_, timesteps, clip_embed, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats)
 
+                    target = noise[torch.arange(B)[:,None], target_index][:,0] # B,4,H,W
                     loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
-                
+
                 accelerator.backward(loss)
                 if accelerator.sync_gradients:
                     params_to_clip = controlnet.parameters()
@@ -1074,7 +1084,7 @@ def main(args):
     if accelerator.is_main_process:
         controlnet = accelerator.unwrap_model(controlnet)
         controlnet.save_pretrained(args.output_dir)
-        
+
     accelerator.end_training()
 
 

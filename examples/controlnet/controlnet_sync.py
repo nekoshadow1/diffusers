@@ -327,6 +327,8 @@ class ControlNetModelSync(UNetModel, ModelMixin, ConfigMixin):
     def forward(self, x, timesteps=None, controlnet_cond=None, conditioning_scale=1.0, context=None, return_dict = True, source_dict=None, **kwargs):
 
         # 1-4. Down and mid blocks, incluidng time embedding
+        if len(timesteps.shape) == 0:
+            timesteps = timesteps[None].to(x.device)
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)   
         emb = self.time_embed(t_emb)
@@ -352,10 +354,6 @@ class ControlNetModelSync(UNetModel, ModelMixin, ConfigMixin):
         down_block_res_samples = controlnet_down_block_res_samples
 
         mid_block_res_sample = self.controlnet_mid_block(h)
-
-        # 6. scaling
-        down_block_res_samples = [sample * conditioning_scale for sample in down_block_res_samples]
-        mid_block_res_sample = mid_block_res_sample * conditioning_scale
 
         if not return_dict:
             return (down_block_res_samples, mid_block_res_sample)

@@ -165,7 +165,6 @@ class SpatialVolumeNet(nn.Module):
         # encode source features
         t_embed_ = t_embed.view(B, 1, self.time_dim).repeat(1, N, 1).view(B, N, self.time_dim)
         
-        # this line is commented by Syncdreamer author :)
         # v_embed_ = v_embed.view(1, N, self.view_dim).repeat(B, 1, 1).view(B, N, self.view_dim)
         v_embed_ = v_embed
         target_Ks = target_Ks.unsqueeze(0).repeat(B, 1, 1, 1)
@@ -177,7 +176,7 @@ class SpatialVolumeNet(nn.Module):
         for ni in range(0, N):
             pose_source_ = target_poses[:, ni]
             K_source_ = target_Ks[:, ni]
-            x_ = self.target_encoder(x[:, 0], t_embed_[:, ni], v_embed_[:, ni])
+            x_ = self.target_encoder(x[:, ni], t_embed_[:, ni], v_embed_[:, ni])
             C = x_.shape[1]
 
             coords_source = get_warp_coordinates(spatial_volume_verts, x_.shape[-1], self.input_image_size, K_source_, pose_source_).view(B, V, V * V, 2)
@@ -227,7 +226,7 @@ class SpatialVolumeNet(nn.Module):
 
 class SyncMultiviewDiffusion(pl.LightningModule):
     def __init__(self, unet_config, scheduler_config,
-                 finetune_unet=False, finetune_projection=True,
+                 finetune_unet=False, finetune_projection=False,
                  view_num=16, image_size=256,
                  cfg_scale=3.0, output_num=8, batch_view_num=4,
                  drop_conditions=False, drop_scheme='default',
@@ -265,7 +264,7 @@ class SyncMultiviewDiffusion(pl.LightningModule):
             self.sampler = SyncDDIMSampler(self, sample_steps , "uniform", 1.0, latent_size=latent_size)
         else:
             raise NotImplementedError
-
+        
     def _init_clip_projection(self):
         self.cc_projection = nn.Linear(772, 768)
         nn.init.eye_(list(self.cc_projection.parameters())[0][:768, :768])
@@ -306,6 +305,7 @@ class SyncMultiviewDiffusion(pl.LightningModule):
         d_a = azimuth_target - azimuth_input # N
         d_a = d_a.unsqueeze(0).repeat(B, 1)
         d_z = torch.zeros_like(d_a)
+
         embedding = torch.stack([d_e, torch.sin(d_a), torch.cos(d_a), d_z], -1) # B,N,4
         return embedding
 
@@ -371,42 +371,45 @@ class SyncMultiviewDiffusion(pl.LightningModule):
         )
 
     def encode_first_stage(self, x, sample=True):
-        # with torch.no_grad():
-        posterior = self.first_stage_model.encode(x)  # b,4,h//8,w//8
-        if sample:
-            return posterior.sample().detach() * self.first_stage_scale_factor
-        else:
-            return posterior.mode().detach() * self.first_stage_scale_factor
+        with torch.no_grad():
+            posterior = self.first_stage_model.encode(x)  # b,4,h//8,w//8
+            if sample:
+                return posterior.sample().detach() * self.first_stage_scale_factor
+            else:
+                return posterior.mode().detach() * self.first_stage_scale_factor
 
     def decode_first_stage(self, z):
-        # with torch.no_grad():
-        z = 1. / self.first_stage_scale_factor * z
-        return self.first_stage_model.decode(z)
+        with torch.no_grad():
+            z = 1. / self.first_stage_scale_factor * z
+            return self.first_stage_model.decode(z)
 
-    def prepare(self, batch, weight_dtype=torch.float32):
+    def prepare(self, batch):
         # encode target
-        if 'pixel_values' in batch:
-            image_target = batch['pixel_values'][:, None, :, :, :].to(dtype=weight_dtype)
-            N = self.view_num
-            x = [self.encode_first_stage(image_target[:,0], True) for ni in range(N)]
+        if 'target_images' in batch:
+            image_target = batch['target_images']
+            image_target = image_target.permute(0, 1, 4, 2, 3) # b,n,3,h,w
+            N = image_target.shape[1]
+            x = [self.encode_first_stage(image_target[:,ni], True) for ni in range(N)]
             x = torch.stack(x, 1) # b,n,4,h//8,w//8
         else:
             x = None
 
-        image_input = batch['conditioning_pixel_values'].to(dtype=weight_dtype)
+        image_input = batch['conditioning_pixel_values'].permute(0, 3, 1, 2)
 
         B = image_input.shape[0]
-        elevations = np.array([30] * B)
+        elevations = np.array([np.deg2rad(30)] * B)
         elevations = np.reshape(elevations, (B,))
         elevation_input = torch.from_numpy(elevations.astype(np.float32)).to(image_input.device)
         
         x_input = self.encode_first_stage(image_input)
         input_info = {'image': image_input, 'elevation': elevation_input, 'x': x_input}
-        # with torch.no_grad():
-        clip_embed = self.clip_image_encoder.encode(image_input)
+        with torch.no_grad():
+            clip_embed = self.clip_image_encoder.encode(image_input)
         return x, clip_embed, input_info
 
     def embed_time(self, t):
+        if len(t.shape) == 0:
+            t = t[None]
         t_embed = timestep_embedding(t, self.time_embed_dim, repeat_only=False) # B,TED
         t_embed = self.time_embed(t_embed) # B,TED
         return t_embed
@@ -435,7 +438,7 @@ class SyncMultiviewDiffusion(pl.LightningModule):
 
         x_concat = x_input_
         return clip_embed_, frustum_volume_feats, x_concat
-
+    
     def training_step(self, batch):
         B = batch['target_image'].shape[0]
         time_steps = torch.randint(0, self.num_timesteps, (B,), device=self.device).long()
