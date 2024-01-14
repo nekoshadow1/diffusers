@@ -53,19 +53,22 @@ from accelerate.utils import write_basic_config
 write_basic_config()
 ```
 
-## Download training dataset
+## Download training dataset and pretrained SyncDreamer weights
 
-I reused the training dataset of Syncdreamer. Due to hardware and time limit, I only utilized the smallest split (renderings-v1-220000-230000.tar.gz) of the training data. You may download the same part as me using the following command:
+I reused the training dataset of Syncdreamer. Due to hardware and time limit, I only utilized the smallest split (renderings-v1-220000-230000.tar.gz) of the training data. You may download the same part as me using the following commands:
+
+If the download script does not work, it is because HF limits large file downloads probably. You can download from [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamerData&ga=1) instead.
+Also download `ViT-L-14.ckpt` and `syncdreamer-pretrain.ckpt` [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamer&ga=1) and put the model files in `SyncDreamer/ckpt/`. 
 
 ```bash
-pip install gdown
-gdown https://drive.google.com/uc?id=137MHDPRjWjK7bc9xQKXwbHCtiP1vvvvZ
-
+#If the script does not work, you need to download the data file from: 
+python download_from_hf.py
 tar -xf renderings-v1-220000-230000.tar.gz
 
-export DATA_PATH='/home/jupyter/data/'
+mkdir '/home/jupyter/data/'
+export DATA_PATH='/home/jupyter/data/syncdreamer/'
 mkdir $DATA_PATH
-python generate_prompts.py --DATA_PATH=$DATA_PATH
+python create_dataset.py --DATA_PATH=$DATA_PATH
 
 rm renderings-v1-220000-230000.tar.gz
 sudo rm -r renderings-v1
@@ -73,39 +76,24 @@ sudo rm -r renderings-v1
 
 You may download other splits [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamerData&ga=1).
 
-(Important) Also remember to put the following script (syncdreamer.py) in DATA_PATH, and modify three variables `METADATA_URL`, `IMAGES_URL`, `CONDITIONING_IMAGES_URL` in line 22-24 accordingly:
+(Important) Also remember to put the following script (syncdreamer.py) in DATA_PATH, and modify three variables `METADATA_URL`, `IMAGES_URL`, `CONDITIONING_IMAGES_URL` in line 23-25 accordingly:
 
 ```bash
-gdown https://drive.google.com/uc?id=1IoPCGQfmWEKUN8nF5HdZTXqRIYzCij22
-mv syncdreamer.py $DATA_PATH
-```
-
-## Download pretrained SyncDreamer weights
-
-```bash
-export CKPT_PATH='SyncDreamer/ckpt'
-mkdir $CKPT_PATH
-gdown https://drive.google.com/uc?id=1n5jE1gY1ARQNRBn1n4meXJqRSH8MaJhF
-mv ViT-L-14.pt $CKPT_PATH
-gdown https://drive.google.com/uc?id=1z8vdOuU0Qxgp6VXEOvMZuSyODwSHQdeT
-mv syncdreamer-pretrain.ckpt $CKPT_PATH
+cp syncdreamer.py $DATA_PATH
 ```
 
 ## Training
 
 ```bash
 mkdir models_syncdreamer
-export DATA_PATH='/home/jupyter/data/'
-export MODEL_DIR="runwayml/stable-diffusion-v1-5"
+export DATA_PATH='/home/jupyter/data/syncdreamer/'
 export OUTPUT_DIR="/home/jupyter/diffusers/examples/controlnet/models_syncdreamer"
 
 accelerate launch train_controlnet_syncdreamer.py \
-  --pretrained_model_name_or_path=$MODEL_DIR \
   --output_dir=$OUTPUT_DIR \
   --train_data_dir=$DATA_PATH \
   --resolution=256 \
   --learning_rate=1e-5 \
-  --mixed_precision="fp16" \
   --train_batch_size=4
 ```
 

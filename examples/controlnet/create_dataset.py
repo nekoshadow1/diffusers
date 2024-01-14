@@ -1,32 +1,7 @@
 import argparse
-import random
 from tqdm import tqdm
 import os
 from shutil import copy
-
-# Prompt template
-templates = [
-'Adjust the image orientation by 30 degrees.',
-'Turn the image clockwise by 30 degrees.',
-'Rotate the picture 30 degrees to the right.',
-'Apply a 30-degree clockwise rotation to the image.',
-'Change the image angle by 30 degrees.',
-'Shift the image orientation 30 degrees to the right.',
-'Spin the image 30 degrees in a clockwise direction.',
-'Tilt the image by 30 degrees.',
-'Perform a 30-degree rotation on the image.',
-'Give the image a 30-degree clockwise twist.',
-'Swing the image to the right by 30 degrees.',
-'Twist the picture 30 degrees in a clockwise manner.',
-'Modify the image orientation with a 30-degree turn.',
-'Adjust the image angle by 30 degrees to the right.',
-'Execute a 30-degree clockwise rotation on the image.',
-'Tweak the image positioning with a 30-degree turn.',
-'Pivot the image by 30 degrees.',
-'Apply a 30-degree rotation in a clockwise fashion to the image.',
-'Alter the image orientation by 30 degrees to the right.',
-'Give the image a 30-degree clockwise spin.',
-]
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Script to create training data for controlnet+syncdreamer.")
@@ -69,6 +44,13 @@ with open(os.path.join(args.DATA_PATH, 'train.jsonl'), 'w') as file:
         
         cond_img_path = 'conditioning_images/' + cond_img_name
         
+        target_images = []
+        for i in range(16):
+            src_img_name = str(i).zfill(3) + ".png"
+            dst_img_name = object_id + "_" + str(i).zfill(3) + ".png"
+            target_images.append("images/" + dst_img_name)
+        target_images = str(target_images)
+        
         for i in range(16):
             src_img_name = str(i).zfill(3) + '.png'
             dst_img_name = object_id + '_' + str(i).zfill(3) + '.png'
@@ -82,8 +64,7 @@ with open(os.path.join(args.DATA_PATH, 'train.jsonl'), 'w') as file:
             copy(src, dst)
             
             degree = i * 22.5
-            prompt = generate_prompt(templates, degree)
-            line = '"text": "{}", "image": "{}", "conditioning_image": "{}", "target_index":{}'.format(prompt, 'images/' + dst_img_name, cond_img_path, i)
+            line = '"image": "{}", "conditioning_image": "{}", "target_index":{}, "target_images": "{}"'.format('images/' + dst_img_name, cond_img_path, i, target_images)
             line = '{' + line + '}\n'
             file.write(line)
             

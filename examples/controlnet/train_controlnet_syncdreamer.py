@@ -62,8 +62,6 @@ from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
-from SyncDreamer.modules import FrozenCLIPImageEmbedder
-
 from omegaconf import OmegaConf
 from skimage.io import imsave
 
@@ -84,55 +82,13 @@ check_min_version("0.25.0.dev0")
 
 logger = get_logger(__name__)
 
-def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
-    text_encoder_config = PretrainedConfig.from_pretrained(
-        pretrained_model_name_or_path,
-        subfolder="text_encoder",
-        revision=revision,
-    )
-    model_class = text_encoder_config.architectures[0]
-
-    if model_class == "CLIPTextModel":
-        from transformers import CLIPTextModel
-
-        return CLIPTextModel
-    elif model_class == "RobertaSeriesModelWithTransformation":
-        from diffusers.pipelines.alt_diffusion.modeling_roberta_series import RobertaSeriesModelWithTransformation
-
-        return RobertaSeriesModelWithTransformation
-    else:
-        raise ValueError(f"{model_class} is not supported.")
-
-#     yaml = f"""
-# ---
-# license: creativeml-openrail-m
-# base_model: {base_model}
-# tags:
-# - stable-diffusion
-# - stable-diffusion-diffusers
-# - text-to-image
-# - diffusers
-# - controlnet
-# inference: true
-# ---
-#     """
-#     model_card = f"""
-# # controlnet-{repo_id}
-
-# These are controlnet weights trained on {base_model} with new type of conditioning.
-# {img_str}
-# """
-#     with open(os.path.join(repo_folder, "README.md"), "w") as f:
-#         f.write(yaml + model_card)
-
-
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Simple example of a ControlNet training script.")
     parser.add_argument(
         "--pretrained_model_name_or_path",
         type=str,
         default=None,
-        required=True,
+        required=False,
         help="Path to pretrained model or model identifier from huggingface.co/models.",
     )
     parser.add_argument(
@@ -479,7 +435,7 @@ def parse_args(input_args=None):
 
     return args
 
-def make_train_dataset(args, tokenizer, accelerator):
+def make_train_dataset(args, accelerator):
     # Get the datasets: you can either provide your own training and evaluation files (see below)
     # or specify a Dataset from the hub (the dataset will be downloaded automatically from the datasets Hub).
 
@@ -508,9 +464,9 @@ def make_train_dataset(args, tokenizer, accelerator):
     
     target_index_column = None
     target_images_column = None
-    if len(column_names) == 5:
-        target_index_column = column_names[3]
-        target_images_column = column_names[4]
+    if len(column_names) == 4:
+        target_index_column = column_names[2]
+        target_images_column = column_names[3]
         
     # 6. Get the column names for input/target.
     if args.image_column is None:
@@ -543,25 +499,6 @@ def make_train_dataset(args, tokenizer, accelerator):
                 f"`--conditioning_image_column` value '{args.conditioning_image_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
             )
 
-    def tokenize_captions(examples, is_train=True):
-        captions = []
-        for caption in examples[caption_column]:
-            if random.random() < args.proportion_empty_prompts:
-                captions.append("")
-            elif isinstance(caption, str):
-                captions.append(caption)
-            elif isinstance(caption, (list, np.ndarray)):
-                # take a random caption if there are multiple
-                captions.append(random.choice(caption) if is_train else caption[0])
-            else:
-                raise ValueError(
-                    f"Caption column `{caption_column}` should contain either strings or lists of strings."
-                )
-        inputs = tokenizer(
-            captions, max_length=tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt"
-        )
-        return inputs.input_ids
-
     image_transforms = []
     image_transforms.extend([transforms.ToTensor(), transforms.Lambda(lambda x: rearrange(x * 2. - 1., 'c h w -> h w c'))])
     image_transforms = transforms.Compose(image_transforms)
@@ -584,7 +521,6 @@ def make_train_dataset(args, tokenizer, accelerator):
 
         examples["pixel_values"] = images
         examples["conditioning_pixel_values"] = conditioning_images
-        examples["input_ids"] = tokenize_captions(examples)
 
         return examples
 
@@ -603,11 +539,8 @@ def collate_fn(examples):
 
     conditioning_pixel_values = torch.stack([example["conditioning_pixel_values"] for example in examples])
     conditioning_pixel_values = conditioning_pixel_values.to(memory_format=torch.contiguous_format).float()
-
-    input_ids = torch.stack([example["input_ids"] for example in examples])
     
     if "target_indexes" in examples[0]:
-        # print('examples[0]:', examples[0]["target_images"])
         target_indexes = [example["target_indexes"] for example in examples]
         
         target_images = [torch.stack([e for e in example["target_images"]]) for example in examples]
@@ -617,7 +550,6 @@ def collate_fn(examples):
         return {
             "pixel_values": pixel_values,
             "conditioning_pixel_values": conditioning_pixel_values,
-            "input_ids": input_ids,
             "target_indexes": target_indexes,
             "target_images": target_images,
         }
@@ -625,7 +557,6 @@ def collate_fn(examples):
         return {
         "pixel_values": pixel_values,
         "conditioning_pixel_values": conditioning_pixel_values,
-        "input_ids": input_ids,
     }
 
 def load_model(cfg,ckpt,strict=True):
@@ -672,28 +603,15 @@ def main(args):
         if args.output_dir is not None:
             os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load the tokenizer
-    if args.tokenizer_name:
-        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, revision=args.revision, use_fast=False)
-    elif args.pretrained_model_name_or_path:
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.pretrained_model_name_or_path,
-            subfolder="tokenizer",
-            revision=args.revision,
-            use_fast=False,
-        )
-        # from transformers import BertTokenizerFast  # TODO: add to reuquirements
-        # tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-
     cfg = 'SyncDreamer/configs/syncdreamer.yaml'
-    vae = load_model(cfg, '/home/jupyter/SyncDreamer/ckpt/syncdreamer-pretrain.ckpt', strict=True)
+    dreamer = load_model(cfg, 'SyncDreamer/ckpt/syncdreamer-pretrain.ckpt', strict=True)
     
     if args.controlnet_model_name_or_path:
         logger.info("Loading existing controlnet weights")
         controlnet = ControlNetModelSync.from_pretrained(args.controlnet_model_name_or_path)
     else:
         logger.info("Initializing controlnet weights from unet")
-        controlnet = ControlNetModelSync.from_unet(vae.model.diffusion_model)
+        controlnet = ControlNetModelSync.from_unet(dreamer.model.diffusion_model)
     
     # `accelerate` 0.16.0 will have better support for customized saving
     if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
@@ -726,7 +644,7 @@ def main(args):
         accelerator.register_save_state_pre_hook(save_model_hook)
         accelerator.register_load_state_pre_hook(load_model_hook)
 
-    vae.requires_grad_(False)
+    dreamer.requires_grad_(False)
     controlnet.train()
 
     if args.enable_xformers_memory_efficient_attention:
@@ -787,7 +705,7 @@ def main(args):
         eps=args.adam_epsilon,
     )
 
-    train_dataset = make_train_dataset(args, tokenizer, accelerator)
+    train_dataset = make_train_dataset(args, accelerator)
 
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -827,7 +745,7 @@ def main(args):
         weight_dtype = torch.bfloat16
 
     # Move vae, unet and text_encoder to device and cast to weight_dtype
-    vae.to(accelerator.device, dtype=weight_dtype)
+    dreamer.to(accelerator.device, dtype=weight_dtype)
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -988,7 +906,7 @@ def main(args):
             with accelerator.accumulate(controlnet):
                 # Convert images to latent space   
                 with torch.autocast("cuda"):
-                    x, clip_embed, input_info = vae.prepare(batch)
+                    x, clip_embed, input_info = dreamer.prepare(batch)
 
                     # Sample noise that we'll add to the latents
                     bsz = x.shape[0]
@@ -998,7 +916,7 @@ def main(args):
 
                     # Add noise to the latents according to the noise magnitude at each timestep
                     # (this is the forward diffusion process)
-                    x_noisy, noise = vae.add_noise(x, timesteps)
+                    x_noisy, noise = dreamer.add_noise(x, timesteps)
                     N = 16
                     B = bsz
                 
@@ -1006,12 +924,12 @@ def main(args):
                     target_index = np.reshape(target_index, (B, 1))
                     target_index = torch.from_numpy(target_index).to(x.device).long()
 
-                    v_embed = vae.get_viewpoint_embedding(B, input_info['elevation']) # B, N,v_dim
-                    t_embed = vae.embed_time(timesteps)
-                    spatial_volume = vae.spatial_volume.construct_spatial_volume(x_noisy, t_embed, v_embed, vae.poses, vae.Ks)
+                    v_embed = dreamer.get_viewpoint_embedding(B, input_info['elevation']) # B, N,v_dim
+                    t_embed = dreamer.embed_time(timesteps)
+                    spatial_volume = dreamer.spatial_volume.construct_spatial_volume(x_noisy, t_embed, v_embed, dreamer.poses, dreamer.Ks)
                     
                     # Replaced v_embed with encoder_hidden_states here since we cannot use target index as input.
-                    clip_embed, volume_feats, x_concat = vae.get_target_view_feats(input_info['x'], spatial_volume, clip_embed, t_embed, v_embed, target_index)
+                    clip_embed, volume_feats, x_concat = dreamer.get_target_view_feats(input_info['x'], spatial_volume, clip_embed, t_embed, v_embed, target_index)
 
                     x_noisy_ = x_noisy[torch.arange(B)[:,None],target_index][:,0]
                 
@@ -1028,7 +946,7 @@ def main(args):
                         return_dict=False,
                         source_dict=volume_feats,
                     )
-                    model_pred = vae.model.diffusion_model(x_noisy_, timesteps, clip_embed, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats)
+                    model_pred = dreamer.model.diffusion_model(x_noisy_, timesteps, clip_embed, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats)
 
                     target = noise[torch.arange(B)[:,None], target_index][:,0] # B,4,H,W
                     loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
