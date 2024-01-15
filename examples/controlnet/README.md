@@ -1,10 +1,12 @@
-# ControlNet + SyncDreamer training example
+# ControlNet + SyncDreamer
 
 [Adding Conditional Control to Text-to-Image Diffusion Models](https://arxiv.org/abs/2302.05543) by Lvmin Zhang and Maneesh Agrawala.
 
 This example is based on the [training example in the original ControlNet repository](https://github.com/lllyasviel/ControlNet/blob/main/docs/train.md). It trains a ControlNet to fill circles using a [small synthetic dataset](https://huggingface.co/datasets/fusing/fill50k).
 
 ## System requirements
+
+Linux
 
 CUDA 11.3
 
@@ -57,11 +59,10 @@ write_basic_config()
 
 I reused the training dataset of Syncdreamer. Due to hardware and time limit, I only utilized the smallest split (renderings-v1-220000-230000.tar.gz) of the training data. You may download the same part as me using the following commands:
 
-If the download script does not work, it is because HF limits large file downloads probably. You can download from [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamerData&ga=1) instead.
-Also download `ViT-L-14.ckpt` and `syncdreamer-pretrain.ckpt` [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamer&ga=1) and put the model files in `SyncDreamer/ckpt/`. 
+If the download script does not work, it is because HF limits large file downloads probably. You can download renderings-v1-220000-230000.tar.gz from [here](https://huggingface.co/datasets/jianfuzhang233/controlnet_syncdreamer/tree/main) instead.
+Also download `ViT-L-14.ckpt` and `syncdreamer-pretrain.ckpt` [here](https://huggingface.co/datasets/jianfuzhang233/controlnet_syncdreamer/tree/main) and put the model files in `SyncDreamer/ckpt/`.
 
 ```bash
-#If the script does not work, you need to download the data file from: 
 python download_dataset_from_hf.py
 tar -xf renderings-v1-220000-230000.tar.gz
 
@@ -99,10 +100,16 @@ accelerate launch train_controlnet_syncdreamer.py \
 
 ## Inference
 
-You can download my trained ControlNet [here](https://huggingface.co/jianfuzhang233/controlnet_syncdreamer/tree/main) or run the following scripts.
+You can download my trained ControlNet [here](https://huggingface.co/jianfuzhang233/controlnet_syncdreamer/tree/main) or run the following commands.
 
 ```bash
 mkdir trained_model
 export MODEL_PATH='/home/jupyter/diffusers/examples/controlnet/trained_model/'
 python download_models_from_hf.py
+```
+
+You can run the inference in inference.ipynb or run the following script.
+
+```bash
+python inference.py --MODEL_PATH trained_model --INPUT_PATH testset/aircraft.png --AZIMUTH 90
 ```

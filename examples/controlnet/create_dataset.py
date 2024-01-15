@@ -20,9 +20,6 @@ def parse_args(input_args=None):
         
     return args
 
-def generate_prompt(templates, degree):
-    return random.choice(templates).replace('30', str(degree))
-
 args = parse_args()
 
 ROOT_PATH = './renderings-v1/'

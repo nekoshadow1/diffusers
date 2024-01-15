@@ -38,6 +38,7 @@ from diffusers.utils import (
     unscale_lora_layers,
 )
 from diffusers.utils.torch_utils import is_compiled_module, is_torch_version, randn_tensor
+# from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 from pipeline_utils_sync import DiffusionPipeline
 
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
@@ -891,6 +892,7 @@ class StableDiffusionControlNetPipeline(
         self,
         prompt: Union[str, List[str]] = None,
         image: PipelineImageInput = None,
+        conditioning_image_path = None,
         height: Optional[int] = None,
         width: Optional[int] = None,
         num_inference_steps: int = 50,
@@ -1043,21 +1045,7 @@ class StableDiffusionControlNetPipeline(
                 mult * [control_guidance_start],
                 mult * [control_guidance_end],
             )
-
-        # 1. Check inputs. Raise error if not correct
-        self.check_inputs(
-            prompt,
-            image,
-            callback_steps,
-            negative_prompt,
-            prompt_embeds,
-            negative_prompt_embeds,
-            controlnet_conditioning_scale,
-            control_guidance_start,
-            control_guidance_end,
-            callback_on_step_end_tensor_inputs,
-        )
-        
+ 
         def drop(cond, mask):
             shape = cond.shape
             B = shape[0]
@@ -1138,10 +1126,8 @@ class StableDiffusionControlNetPipeline(
             ones = [1 for _ in range(len(t_shape)-1)]
             tensor_new = tensor.view(B,1,*t_shape[1:]).repeat(1,VN,*ones).view(B*VN,*t_shape[1:])
             return tensor_new
-        
-        # flags_input = '/home/jupyter/data/' + 'conditioning_images/625785a3455b478d8b72b5a7f0bd269a_000.png'
-        # flags_input = './kunkun.png'
-        flags_input = './test.png'
+
+        flags_input = conditioning_image_path
         flags_sample_steps = 50
         weight_dtype = torch.float32
         
@@ -1214,8 +1200,7 @@ class StableDiffusionControlNetPipeline(
                         source_dict=volume_feats_,
                     )
 
-                    # noise, s_uc = self.dreamer.model.diffusion_model(x_, t_, clip_embed_, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats_).chunk(2)
-                    noise, s_uc = self.dreamer.model.diffusion_model(x_, t_, clip_embed_, None, None, source_dict=volume_feats_).chunk(2)
+                    noise, s_uc = self.dreamer.model.diffusion_model(x_, t_, clip_embed_, down_block_res_samples, mid_block_res_sample, source_dict=volume_feats_).chunk(2)
                     noise = s_uc + unconditional_scale * (noise - s_uc)
 
                 else:
@@ -1244,7 +1229,5 @@ class StableDiffusionControlNetPipeline(
         x_sample = (torch.clamp(x_sample,max=1.0,min=-1.0) + 1) * 0.5
         x_sample = x_sample.permute(0,1,3,4,2).cpu().numpy() * 255
         x_sample = x_sample.astype(np.uint8)
-
-        target_index = round(90 / 22.5)
 
         return x_sample[0, :, :, :, :]
