@@ -88,7 +88,7 @@ output = pipe(
     '', image=None, conditioning_image_path=args.INPUT_PATH,
 )
 
-target_index = round(args.AZIMUTH / 22.5)
+target_index = round(args.AZIMUTH % 360 / 22.5)
 
 OUTPUT_PATH = 'output/'
 if not os.path.exists(OUTPUT_PATH):
