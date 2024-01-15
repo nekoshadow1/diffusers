@@ -918,7 +918,6 @@ def main(args):
                     t_embed = dreamer.embed_time(timesteps)
                     spatial_volume = dreamer.spatial_volume.construct_spatial_volume(x_noisy, t_embed, v_embed, dreamer.poses, dreamer.Ks)
                     
-                    # Replaced v_embed with encoder_hidden_states here since we cannot use target index as input.
                     clip_embed, volume_feats, x_concat = dreamer.get_target_view_feats(input_info['x'], spatial_volume, clip_embed, t_embed, v_embed, target_index)
 
                     x_noisy_ = x_noisy[torch.arange(B)[:,None],target_index][:,0]
