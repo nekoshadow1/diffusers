@@ -94,4 +94,4 @@ OUTPUT_PATH = 'output/'
 if not os.path.exists(OUTPUT_PATH):
     os.mkdir(OUTPUT_PATH)
 
-cv2.imwrite(OUTPUT_PATH + os.path.basename(args.INPUT_PATH).split('/')[-1])
+cv2.imwrite(OUTPUT_PATH + os.path.basename(args.INPUT_PATH).split('/')[-1], output[target_index])
