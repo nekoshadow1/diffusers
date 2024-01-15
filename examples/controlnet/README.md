@@ -75,7 +75,7 @@ rm renderings-v1-220000-230000.tar.gz
 sudo rm -r renderings-v1
 ```
 
-You may download other splits [here](https://connecthkuhk-my.sharepoint.com/personal/yuanly_connect_hku_hk/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Fyuanly%5Fconnect%5Fhku%5Fhk%2FDocuments%2FSyncDreamerData&ga=1).
+You may download other splits [here](https://connecthkuhk-my.sharepoint.com/:f:/g/personal/yuanly_connect_hku_hk/EqrCp4rcFOFBuCatr88bkL0Bl3qKIEU1gSPS7TQ2KGb7Yg?e=eSESKA).
 
 (Important) Also remember to put the following script (syncdreamer.py) in DATA_PATH, and modify three variables `METADATA_URL`, `IMAGES_URL`, `CONDITIONING_IMAGES_URL` in line 23-25 accordingly:
 
