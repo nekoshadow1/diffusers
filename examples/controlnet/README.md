@@ -62,7 +62,7 @@ Also download `ViT-L-14.ckpt` and `syncdreamer-pretrain.ckpt` [here](https://con
 
 ```bash
 #If the script does not work, you need to download the data file from: 
-python download_from_hf.py
+python download_dataset_from_hf.py
 tar -xf renderings-v1-220000-230000.tar.gz
 
 mkdir '/home/jupyter/data/'
@@ -98,3 +98,11 @@ accelerate launch train_controlnet_syncdreamer.py \
 ```
 
 ## Inference
+
+You can download my trained ControlNet [here](https://huggingface.co/jianfuzhang233/controlnet_syncdreamer/tree/main) or run the following scripts.
+
+```bash
+mkdir trained_model
+export MODEL_PATH='/home/jupyter/diffusers/examples/controlnet/trained_model/'
+python download_models_from_hf.py
+```

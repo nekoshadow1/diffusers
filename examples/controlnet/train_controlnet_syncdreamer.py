@@ -479,16 +479,6 @@ def make_train_dataset(args, accelerator):
                 f"`--image_column` value '{args.image_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
             )
 
-    if args.caption_column is None:
-        caption_column = column_names[1]
-        logger.info(f"caption column defaulting to {caption_column}")
-    else:
-        caption_column = args.caption_column
-        if caption_column not in column_names:
-            raise ValueError(
-                f"`--caption_column` value '{args.caption_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
-            )
-
     if args.conditioning_image_column is None:
         conditioning_image_column = column_names[2]
         logger.info(f"conditioning image column defaulting to {conditioning_image_column}")
