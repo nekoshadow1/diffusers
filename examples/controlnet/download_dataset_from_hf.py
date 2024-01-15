@@ -10,7 +10,7 @@ filenames = ["renderings-v1-220000-230000.tar.gz", "syncdreamer-pretrain.ckpt", 
 for filename in filenames[:1]:
     hf_hub_download(repo_id="jianfuzhang233/controlnet_syncdreamer", filename=filename, repo_type="dataset", local_dir='.')
 
-for filename in filenames[:1]:
+for filename in filenames[1:]:
     hf_hub_download(repo_id="jianfuzhang233/controlnet_syncdreamer", filename=filename, repo_type="dataset", local_dir=syncdreamer_ckpt_path)
     
 print("All files are downloaded!")
