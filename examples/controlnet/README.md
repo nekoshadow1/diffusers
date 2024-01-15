@@ -59,7 +59,7 @@ write_basic_config()
 
 I reused the training dataset of Syncdreamer. Due to hardware and time limit, I only utilized the smallest split (renderings-v1-220000-230000.tar.gz) of the training data. You may download the same part as me using the following commands:
 
-If the download script does not work, it is because HF limits large file downloads probably. You can download renderings-v1-220000-230000.tar.gz from [here](https://huggingface.co/datasets/jianfuzhang233/controlnet_syncdreamer/tree/main) instead.
+If the download script fails (the downloaded files are extremely small), it is because HF limits large file downloads probably. You can download renderings-v1-220000-230000.tar.gz [here](https://huggingface.co/datasets/jianfuzhang233/controlnet_syncdreamer/tree/main) instead.
 Also download `ViT-L-14.ckpt` and `syncdreamer-pretrain.ckpt` [here](https://huggingface.co/datasets/jianfuzhang233/controlnet_syncdreamer/tree/main) and put the model files in `SyncDreamer/ckpt/`.
 
 ```bash
@@ -101,6 +101,8 @@ accelerate launch train_controlnet_syncdreamer.py \
 ## Inference
 
 You can download my trained ControlNet [here](https://huggingface.co/jianfuzhang233/controlnet_syncdreamer/tree/main) or run the following commands.
+
+If the download script fails (the downloaded files are extremely small), it is because HF limits large file downloads probably. You can download diffusion_pytorch_model.safetensors and config.json [here](https://huggingface.co/jianfuzhang233/controlnet_syncdreamer) instead, and put them in `trained_model`. Also download `ViT-L-14.ckpt` and `syncdreamer-pretrain.ckpt` [here](https://huggingface.co/datasets/jianfuzhang233/controlnet_syncdreamer/tree/main) and put them in `SyncDreamer/ckpt/`.
 
 ```bash
 mkdir trained_model
