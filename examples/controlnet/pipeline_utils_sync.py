@@ -51,7 +51,7 @@ from diffusers.utils import (
     WEIGHTS_NAME,
     BaseOutput,
     deprecate,
-    get_class_from_dynamic_module,
+    # get_class_from_dynamic_module,
     is_accelerate_available,
     is_accelerate_version,
     is_peft_available,
@@ -113,6 +113,105 @@ ALL_IMPORTABLE_CLASSES = {}
 for library in LOADABLE_CLASSES:
     ALL_IMPORTABLE_CLASSES.update(LOADABLE_CLASSES[library])
 
+
+@validate_hf_hub_args
+def get_class_from_dynamic_module(
+    pretrained_model_name_or_path: Union[str, os.PathLike],
+    module_file: str,
+    # class_name: Optional[str] = None,
+    cache_dir: Optional[Union[str, os.PathLike]] = None,
+    force_download: bool = False,
+    resume_download: bool = False,
+    proxies: Optional[Dict[str, str]] = None,
+    token: Optional[Union[bool, str]] = None,
+    revision: Optional[str] = None,
+    local_files_only: bool = False,
+    **kwargs,
+):
+    """
+    Extracts a class from a module file, present in the local folder or repository of a model.
+
+    <Tip warning={true}>
+
+    Calling this function will execute the code in the module file found locally or downloaded from the Hub. It should
+    therefore only be called on trusted repos.
+
+    </Tip>
+
+    Args:
+        pretrained_model_name_or_path (`str` or `os.PathLike`):
+            This can be either:
+
+            - a string, the *model id* of a pretrained model configuration hosted inside a model repo on
+              huggingface.co. Valid model ids can be located at the root-level, like `bert-base-uncased`, or namespaced
+              under a user or organization name, like `dbmdz/bert-base-german-cased`.
+            - a path to a *directory* containing a configuration file saved using the
+              [`~PreTrainedTokenizer.save_pretrained`] method, e.g., `./my_model_directory/`.
+
+        module_file (`str`):
+            The name of the module file containing the class to look for.
+        class_name (`str`):
+            The name of the class to import in the module.
+        cache_dir (`str` or `os.PathLike`, *optional*):
+            Path to a directory in which a downloaded pretrained model configuration should be cached if the standard
+            cache should not be used.
+        force_download (`bool`, *optional*, defaults to `False`):
+            Whether or not to force to (re-)download the configuration files and override the cached versions if they
+            exist.
+        resume_download (`bool`, *optional*, defaults to `False`):
+            Whether or not to delete incompletely received file. Attempts to resume the download if such a file exists.
+        proxies (`Dict[str, str]`, *optional*):
+            A dictionary of proxy servers to use by protocol or endpoint, e.g., `{'http': 'foo.bar:3128',
+            'http://hostname': 'foo.bar:4012'}.` The proxies are used on each request.
+        token (`str` or `bool`, *optional*):
+            The token to use as HTTP bearer authorization for remote files. If `True`, will use the token generated
+            when running `transformers-cli login` (stored in `~/.huggingface`).
+        revision (`str`, *optional*, defaults to `"main"`):
+            The specific model version to use. It can be a branch name, a tag name, or a commit id, since we use a
+            git-based system for storing models and other artifacts on huggingface.co, so `revision` can be any
+            identifier allowed by git.
+        local_files_only (`bool`, *optional*, defaults to `False`):
+            If `True`, will only try to load the tokenizer configuration from local files.
+
+    <Tip>
+
+    You may pass a token in `token` if you are not logged in (`huggingface-cli login`) and want to use private
+    or [gated models](https://huggingface.co/docs/hub/models-gated#gated-models).
+
+    </Tip>
+
+    Returns:
+        `type`: The class, dynamically imported from the module.
+
+    Examples:
+
+    ```python
+    # Download module `modeling.py` from huggingface.co and cache then extract the class `MyBertModel` from this
+    # module.
+    cls = get_class_from_dynamic_module("sgugger/my-bert-model", "modeling.py", "MyBertModel")
+    ```"""
+    # And lastly we get the class inside our newly created module
+    final_module = get_cached_module_file(
+        pretrained_model_name_or_path,
+        module_file,
+        cache_dir=cache_dir,
+        force_download=force_download,
+        resume_download=resume_download,
+        proxies=proxies,
+        token=token,
+        revision=revision,
+        local_files_only=local_files_only,
+    )
+    # return get_class_in_module(class_name, final_module.replace(".py", ""))
+    return get_class_in_module(final_module.replace(".py", ""))
+
+def get_class_in_module(module_path):
+    """
+    Import a module on the cache directory for modules and extract a class from it.
+    """
+    module_path = module_path.replace(os.path.sep, ".")
+    module = importlib.import_module(module_path)
+    return find_pipeline_class(module)
 
 @dataclass
 class ImagePipelineOutput(BaseOutput):
@@ -358,7 +457,6 @@ def _get_pipeline_class(
     custom_pipeline=None,
     repo_id=None,
     hub_revision=None,
-    class_name=None,
     cache_dir=None,
     revision=None,
 ):
@@ -382,7 +480,6 @@ def _get_pipeline_class(
         return get_class_from_dynamic_module(
             custom_pipeline,
             module_file=file_name,
-            class_name=class_name,
             cache_dir=cache_dir,
             revision=revision,
         )
@@ -923,7 +1020,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
 
     @classmethod
     @validate_hf_hub_args
-    def from_pretrained(cls, pretrained_model_name_or_path: Optional[Union[str, os.PathLike]], dreamer, **kwargs):
+    def from_pretrained(cls, dreamer, **kwargs):
         r"""
         Instantiate a PyTorch diffusion pipeline from pretrained pipeline weights.
 
@@ -938,14 +1035,6 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         ```
 
         Parameters:
-            pretrained_model_name_or_path (`str` or `os.PathLike`, *optional*):
-                Can be either:
-
-                    - A string, the *repo id* (for example `CompVis/ldm-text2im-large-256`) of a pretrained pipeline
-                      hosted on the Hub.
-                    - A path to a *directory* (for example `./my_pipeline_directory/`) containing pipeline weights
-                      saved using
-                    [`~DiffusionPipeline.save_pretrained`].
             torch_dtype (`str` or `torch.dtype`, *optional*):
                 Override the default `torch.dtype` and load the model with another dtype. If "auto" is passed, the
                 dtype is automatically derived from the model's weights.
@@ -1093,96 +1182,17 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         use_onnx = kwargs.pop("use_onnx", None)
         load_connected_pipeline = kwargs.pop("load_connected_pipeline", False)
 
-        # 1. Download the checkpoints and configs
-        # use snapshot download here to get it working from from_pretrained
-        if not os.path.isdir(pretrained_model_name_or_path):
-            if pretrained_model_name_or_path.count("/") > 1:
-                raise ValueError(
-                    f'The provided pretrained_model_name_or_path "{pretrained_model_name_or_path}"'
-                    " is neither a valid local path nor a valid repo id. Please check the parameter."
-                )
-            cached_folder = cls.download(
-                pretrained_model_name_or_path,
-                cache_dir=cache_dir,
-                resume_download=resume_download,
-                force_download=force_download,
-                proxies=proxies,
-                local_files_only=local_files_only,
-                token=token,
-                revision=revision,
-                from_flax=from_flax,
-                use_safetensors=use_safetensors,
-                use_onnx=use_onnx,
-                custom_pipeline=custom_pipeline,
-                custom_revision=custom_revision,
-                variant=variant,
-                load_connected_pipeline=load_connected_pipeline,
-                **kwargs,
-            )
-        else:
-            cached_folder = pretrained_model_name_or_path
-
-        config_dict = cls.load_config(cached_folder)
-
-        # pop out "_ignore_files" as it is only needed for download
-        config_dict.pop("_ignore_files", None)
-
-        # 2. Define which model components should load variants
-        # We retrieve the information by matching whether variant
-        # model checkpoints exist in the subfolders
-        model_variants = {}
-        if variant is not None:
-            for folder in os.listdir(cached_folder):
-                folder_path = os.path.join(cached_folder, folder)
-                is_folder = os.path.isdir(folder_path) and folder in config_dict
-                variant_exists = is_folder and any(
-                    p.split(".")[1].startswith(variant) for p in os.listdir(folder_path)
-                )
-                if variant_exists:
-                    model_variants[folder] = variant
-
-        # 3. Load the pipeline class, if using custom module then load it from the hub
-        # if we load from explicit class, let's use it
-        custom_class_name = None
-        if os.path.isfile(os.path.join(cached_folder, f"{custom_pipeline}.py")):
-            custom_pipeline = os.path.join(cached_folder, f"{custom_pipeline}.py")
-        elif isinstance(config_dict["_class_name"], (list, tuple)) and os.path.isfile(
-            os.path.join(cached_folder, f"{config_dict['_class_name'][0]}.py")
-        ):
-            custom_pipeline = os.path.join(cached_folder, f"{config_dict['_class_name'][0]}.py")
-            custom_class_name = config_dict["_class_name"][1]
+        config_dict = {}
 
         pipeline_class = _get_pipeline_class(
             cls,
             config_dict,
             load_connected_pipeline=load_connected_pipeline,
             custom_pipeline=custom_pipeline,
-            class_name=custom_class_name,
+            # class_name=custom_class_name,
             cache_dir=cache_dir,
             revision=custom_revision,
         )
-
-        # DEPRECATED: To be removed in 1.0.0
-        if pipeline_class.__name__ == "StableDiffusionInpaintPipeline" and version.parse(
-            version.parse(config_dict["_diffusers_version"]).base_version
-        ) <= version.parse("0.5.1"):
-            from diffusers import StableDiffusionInpaintPipeline, StableDiffusionInpaintPipelineLegacy
-
-            pipeline_class = StableDiffusionInpaintPipelineLegacy
-
-            deprecation_message = (
-                "You are using a legacy checkpoint for inpainting with Stable Diffusion, therefore we are loading the"
-                f" {StableDiffusionInpaintPipelineLegacy} class instead of {StableDiffusionInpaintPipeline}. For"
-                " better inpainting results, we strongly suggest using Stable Diffusion's official inpainting"
-                " checkpoint: https://huggingface.co/runwayml/stable-diffusion-inpainting instead or adapting your"
-                f" checkpoint {pretrained_model_name_or_path} to the format of"
-                " https://huggingface.co/runwayml/stable-diffusion-inpainting. Note that we do not actively maintain"
-                " the {StableDiffusionInpaintPipelineLegacy} class and will likely remove it in version 1.0.0."
-            )
-            deprecate("StableDiffusionInpaintPipelineLegacy", "1.0.0", deprecation_message, standard_warn=False)
-
-        # 4. Define expected modules given pipeline signature
-        # and define non-None initialized modules (=`init_kwargs`)
 
         # some modules can be passed directly to the init
         # in this case they are already instantiated in `kwargs`
@@ -1210,15 +1220,7 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
             return True
 
         init_dict = {k: v for k, v in init_dict.items() if load_module(k, v)}
-
-        # Special case: safety_checker must be loaded separately when using `from_flax`
-        if from_flax and "safety_checker" in init_dict and "safety_checker" not in passed_class_obj:
-            raise NotImplementedError(
-                "The safety checker cannot be automatically loaded when loading weights `from_flax`."
-                " Please, pass `safety_checker=None` to `from_pretrained`, and load the safety checker"
-                " separately if you need it."
-            )
-
+        
         # 5. Throw nice warnings / errors for fast accelerate loading
         if len(unused_kwargs) > 0:
             logger.warning(
@@ -1254,55 +1256,6 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
 
         # import it here to avoid circular import
         from diffusers import pipelines
-
-        # 6. Load each module in the pipeline
-        for name, (library_name, class_name) in logging.tqdm(init_dict.items(), desc="Loading pipeline components..."):
-            # 6.1 - now that JAX/Flax is an official framework of the library, we might load from Flax names
-            class_name = class_name[4:] if class_name.startswith("Flax") else class_name
-
-            # 6.2 Define all importable classes
-            is_pipeline_module = hasattr(pipelines, library_name)
-            importable_classes = ALL_IMPORTABLE_CLASSES
-            loaded_sub_model = None
-
-            # 6.3 Use passed sub model or load class_name from library_name
-            if name in passed_class_obj:
-                # if the model is in a pipeline module, then we load it from the pipeline
-                # check that passed_class_obj has correct parent class
-                maybe_raise_or_warn(
-                    library_name, library, class_name, importable_classes, passed_class_obj, name, is_pipeline_module
-                )
-
-                loaded_sub_model = passed_class_obj[name]
-            else:
-                # load sub model
-                loaded_sub_model = load_sub_model(
-                    library_name=library_name,
-                    class_name=class_name,
-                    importable_classes=importable_classes,
-                    pipelines=pipelines,
-                    is_pipeline_module=is_pipeline_module,
-                    pipeline_class=pipeline_class,
-                    torch_dtype=torch_dtype,
-                    provider=provider,
-                    sess_options=sess_options,
-                    device_map=device_map,
-                    max_memory=max_memory,
-                    offload_folder=offload_folder,
-                    offload_state_dict=offload_state_dict,
-                    model_variants=model_variants,
-                    name=name,
-                    from_flax=from_flax,
-                    variant=variant,
-                    low_cpu_mem_usage=low_cpu_mem_usage,
-                    cached_folder=cached_folder,
-                    revision=revision,
-                )
-                logger.info(
-                    f"Loaded {name} as {class_name} from `{name}` subfolder of {pretrained_model_name_or_path}."
-                )
-
-            init_kwargs[name] = loaded_sub_model  # UNet(...), # DiffusionSchedule(...)
         
         init_kwargs['dreamer'] = dreamer
         
@@ -1372,8 +1325,6 @@ class DiffusionPipeline(ConfigMixin, PushToHubMixin):
         # 8. Instantiate the pipeline
         model = pipeline_class(**init_kwargs)
 
-        # 9. Save where the model was instantiated from
-        model.register_to_config(_name_or_path=pretrained_model_name_or_path)
         return model
 
     @property

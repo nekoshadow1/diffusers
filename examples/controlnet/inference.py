@@ -67,26 +67,13 @@ cfg = 'SyncDreamer/configs/syncdreamer.yaml'
 dreamer = load_model(cfg, 'SyncDreamer/ckpt/syncdreamer-pretrain.ckpt', strict=True)
 
 controlnet.to('cuda', dtype=torch.float32)
-dreamer.to('cuda', dtype=torch.float32)
 
 pipe = StableDiffusionControlNetPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5", controlnet=controlnet, dreamer=dreamer, torch_dtype=torch.float32, use_safetensors=True
+    controlnet=controlnet, dreamer=dreamer, torch_dtype=torch.float32, use_safetensors=True
 )
-
-pipe.scheduler = UniPCMultistepScheduler.from_config(pipe.scheduler.config)
-
-from diffusers.pipelines.stable_diffusion import safety_checker
-
-def sc(self, clip_input, images) : return images, [False for i in images]
-
-# edit the StableDiffusionSafetyChecker class so that, when called, it just returns the images and an array of True values
-safety_checker.StableDiffusionSafetyChecker.forward = sc
-
 pipe.to('cuda', dtype=torch.float32)
 
-output = pipe(
-    '', image=None, conditioning_image_path=args.INPUT_PATH,
-)
+output = pipe(conditioning_image_path=args.INPUT_PATH)
 
 target_index = round(args.AZIMUTH % 360 / 22.5)
 
