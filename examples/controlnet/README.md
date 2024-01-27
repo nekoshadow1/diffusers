@@ -9,6 +9,8 @@ This example is based on the [training example in the original ControlNet reposi
 
 ## [Live Demo](https://huggingface.co/spaces/jianfuzhang233/controlnet)
 
+If you just want to quickly try out ControlNet + SyncDreamer and see inference results without setting up environment locally, you can try the [live demo app](https://huggingface.co/spaces/jianfuzhang233/controlnet) I deployed on huggingface!
+
 ## System requirements
 
 Linux
