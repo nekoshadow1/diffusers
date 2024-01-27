@@ -1,8 +1,13 @@
 # ControlNet + SyncDreamer
 
-[Adding Conditional Control to Text-to-Image Diffusion Models](https://arxiv.org/abs/2302.05543) by Lvmin Zhang and Maneesh Agrawala.
+[Adding Conditional Control to Text-to-Image Diffusion Models](https://arxiv.org/abs/2302.05543) by Lvmin Zhang, Anyi Rao, and Maneesh Agrawala.
 
-This example is based on the [training example in the original ControlNet repository](https://github.com/lllyasviel/ControlNet/blob/main/docs/train.md). It trains a ControlNet to fill circles using a [small synthetic dataset](https://huggingface.co/datasets/fusing/fill50k).
+[SyncDreamer: Generating Multiview-consistent Images from a Single-view Image](https://arxiv.org/abs/2309.03453) by Yuan Liu, Cheng Lin, Zijiao Zeng, Xiaoxiao Long, Lingjie Liu, Taku Komura, and Wenping Wang.
+
+This example is based on the [training example in the original ControlNet repository](https://github.com/lllyasviel/ControlNet/blob/main/docs/train.md).
+
+
+## [Live Demo](https://huggingface.co/spaces/jianfuzhang233/controlnet)
 
 ## System requirements
 
@@ -114,4 +119,21 @@ You can run the inference in inference.ipynb or run the following script.
 
 ```bash
 python inference.py --MODEL_PATH trained_model --INPUT_PATH testset/aircraft.png --AZIMUTH 90
+```
+
+## Citation
+If you find this repository useful in your project, please cite the following papers. :)
+```
+@article{liu2023syncdreamer,
+  title={SyncDreamer: Generating Multiview-consistent Images from a Single-view Image},
+  author={Liu, Yuan and Lin, Cheng and Zeng, Zijiao and Long, Xiaoxiao and Liu, Lingjie and Komura, Taku and Wang, Wenping},
+  journal={arXiv preprint arXiv:2309.03453},
+  year={2023}
+}
+@misc{zhang2023adding,
+  title={Adding Conditional Control to Text-to-Image Diffusion Models}, 
+  author={Lvmin Zhang and Anyi Rao and Maneesh Agrawala},
+  booktitle={IEEE International Conference on Computer Vision (ICCV)}
+  year={2023},
+}
 ```
