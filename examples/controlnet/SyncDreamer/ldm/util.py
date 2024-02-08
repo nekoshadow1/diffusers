@@ -274,8 +274,9 @@ class AdamWwithEMAandWings(optim.Optimizer):
 
         return loss
 
-def prepare_inputs(image_path, elevation_input, crop_size=-1, image_size=256):
+def prepare_inputs(image_path, conditioning_image_path, elevation_input, crop_size=-1, image_size=256):
     image_input = Image.open(image_path)
+    conditioning_image = Image.open(conditioning_image_path)
 
     if crop_size!=-1:
         alpha_np = np.asarray(image_input)[:, :, 3]
@@ -288,17 +289,41 @@ def prepare_inputs(image_path, elevation_input, crop_size=-1, image_size=256):
         h_, w_ = int(scale * h), int(scale * w)
         ref_img_ = ref_img_.resize((w_, h_), resample=Image.BICUBIC)
         image_input = add_margin(ref_img_, size=image_size)
+        
+        condition_alpha_np = np.asarray(conditioning_image)[:, :, 3]
+        condition_coords = np.stack(np.nonzero(condition_alpha_np), 1)[:, (1, 0)]
+        condition_min_x, condition_min_y = np.min(condition_coords, 0)
+        condition_max_x, condition_max_y = np.max(condition_coords, 0)
+        condition_ref_img_ = conditioning_image.crop((condition_min_x, condition_min_y, condition_max_x, condition_max_y))
+        condition_h, condition_w = condition_ref_img_.height, condition_ref_img_.width
+        condition_scale = crop_size / max(condition_h, condition_w)
+        condition_h_, condition_w_ = int(condition_scale * condition_h), int(condition_scale * condition_w)
+        condition_ref_img_ = condition_ref_img_.resize((condition_w_, condition_h_), resample=Image.BICUBIC)
+        conditioning_image = add_margin(condition_ref_img_, size=image_size)
     else:
         image_input = add_margin(image_input, size=max(image_input.height, image_input.width))
         image_input = image_input.resize((image_size, image_size), resample=Image.BICUBIC)
+        
+        conditioning_image = add_margin(conditioning_image, size=max(conditioning_image.height, conditioning_image.width))
+        conditioning_image = conditioning_image.resize((image_size, image_size), resample=Image.BICUBIC)
 
     image_input = np.asarray(image_input)
     image_input = image_input.astype(np.float32) / 255.0
     if image_input.shape[-1]==4:
         ref_mask = image_input[:, :, 3:]
         image_input[:, :, :3] = image_input[:, :, :3] * ref_mask + 1 - ref_mask  # white background
+        
+    conditioning_image = np.asarray(conditioning_image)
+    conditioning_image = conditioning_image.astype(np.float32) / 255.0
+    if conditioning_image.shape[-1]==4:
+        ref_mask = conditioning_image[:, :, 3:]
+        conditioning_image[:, :, :3] = conditioning_image[:, :, :3] * ref_mask  # black background
 
     image_input = image_input[:, :, :3] * 2.0 - 1.0
     image_input = torch.from_numpy(image_input.astype(np.float32))
+    
+    conditioning_image = conditioning_image[:, :, :3] * 2.0 - 1.0
+    conditioning_image = torch.from_numpy(conditioning_image.astype(np.float32))
+    
     elevation_input = torch.from_numpy(np.asarray([np.deg2rad(elevation_input)], np.float32))
-    return {"input_image": image_input, "input_elevation": elevation_input}
+    return {"input_image": image_input, "conditioning_image": conditioning_image, "input_elevation": elevation_input}

@@ -161,6 +161,7 @@ class StableDiffusionControlNetPipeline(
     def __call__(
         self,
         conditioning_image_path = None,
+        input_image_path = None,
         height: Optional[int] = None,
         width: Optional[int] = None,
         num_inference_steps: int = 50,
@@ -395,19 +396,19 @@ class StableDiffusionControlNetPipeline(
             tensor_new = tensor.view(B,1,*t_shape[1:]).repeat(1,VN,*ones).view(B*VN,*t_shape[1:])
             return tensor_new
 
-        flags_input = conditioning_image_path
         flags_sample_steps = 50
         weight_dtype = torch.float32
         
-        data = prepare_inputs(flags_input, 30, -1)
+        data = prepare_inputs(input_image_path, conditioning_image_path, 30, -1)
                 
         for k, v in data.items():
             data[k] = v.unsqueeze(0).cuda()
             data[k] = torch.repeat_interleave(data[k], repeats=1, dim=0)
             
         sampler = SyncDDIMSampler(self.dreamer, flags_sample_steps)
-
-        data["conditioning_pixel_values"] = data['input_image']
+        
+        data["input_pixel_values"] = data['input_image']
+        data["conditioning_pixel_values"] = data['conditioning_image']
         _, clip_embed, input_info = self.dreamer.prepare(data)
         controlnet_image = data["conditioning_pixel_values"].to(dtype=weight_dtype)
         controlnet_image = controlnet_image.permute(0, 3, 1, 2) # B, c, h, w

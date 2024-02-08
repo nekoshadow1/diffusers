@@ -394,7 +394,7 @@ class SyncMultiviewDiffusion(pl.LightningModule):
         else:
             x = None
 
-        image_input = batch['conditioning_pixel_values'].permute(0, 3, 1, 2)
+        image_input = batch['input_pixel_values'].permute(0, 3, 1, 2)
 
         B = image_input.shape[0]
         elevations = np.array([np.deg2rad(30)] * B)

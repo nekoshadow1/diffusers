@@ -462,32 +462,35 @@ def make_train_dataset(args, accelerator):
     column_names = dataset["train"].column_names
     print('column_names:', column_names)
     
-    target_index_column = None
-    target_images_column = None
-    if len(column_names) == 4:
-        target_index_column = column_names[2]
-        target_images_column = column_names[3]
+    # target_index_column = None
+    # target_images_column = None
+    # if len(column_names) == 4:
+    image_column = column_names[0]
+    input_image_column = column_names[1]
+    conditioning_image_column = column_names[2]
+    target_index_column = column_names[3]
+    target_images_column = column_names[4]
         
-    # 6. Get the column names for input/target.
-    if args.image_column is None:
-        image_column = column_names[0]
-        logger.info(f"image column defaulting to {image_column}")
-    else:
-        image_column = args.image_column
-        if image_column not in column_names:
-            raise ValueError(
-                f"`--image_column` value '{args.image_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
-            )
+#     # 6. Get the column names for input/target.
+#     if args.image_column is None:
+#         image_column = column_names[0]
+#         logger.info(f"image column defaulting to {image_column}")
+#     else:
+#         image_column = args.image_column
+#         if image_column not in column_names:
+#             raise ValueError(
+#                 f"`--image_column` value '{args.image_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
+#             )
 
-    if args.conditioning_image_column is None:
-        conditioning_image_column = column_names[2]
-        logger.info(f"conditioning image column defaulting to {conditioning_image_column}")
-    else:
-        conditioning_image_column = args.conditioning_image_column
-        if conditioning_image_column not in column_names:
-            raise ValueError(
-                f"`--conditioning_image_column` value '{args.conditioning_image_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
-            )
+#     if args.conditioning_image_column is None:
+#         conditioning_image_column = column_names[2]
+#         logger.info(f"conditioning image column defaulting to {conditioning_image_column}")
+#     else:
+#         conditioning_image_column = args.conditioning_image_column
+#         if conditioning_image_column not in column_names:
+#             raise ValueError(
+#                 f"`--conditioning_image_column` value '{args.conditioning_image_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
+#             )
 
     image_transforms = []
     image_transforms.extend([transforms.ToTensor(), transforms.Lambda(lambda x: rearrange(x * 2. - 1., 'c h w -> h w c'))])
@@ -497,19 +500,23 @@ def make_train_dataset(args, accelerator):
         
         images = [image.convert("RGB") for image in examples[image_column]]
         images = [image_transforms(image) for image in images]
+        
+        input_images = [image.convert("RGB") for image in examples[input_image_column]]
+        input_images = [image_transforms(image) for image in input_images]
 
         conditioning_images = [image.convert("RGB") for image in examples[conditioning_image_column]]
         # conditioning_images = [conditioning_image_transforms(image) for image in conditioning_images]
         conditioning_images = [image_transforms(image) for image in conditioning_images]
         
-        if target_index_column is not None:
-            target_indexes = [target_index for target_index in examples[target_index_column]]
-            examples["target_indexes"] = target_indexes
-        if target_images_column is not None:
-            target_images = [[image_transforms(Image.open(os.path.join(args.train_data_dir, image)).convert("RGB")) for image in eval(target_images_)] for target_images_ in examples[target_images_column]]
-            examples["target_images"] = target_images
+        # if target_index_column is not None:
+        target_indexes = [target_index for target_index in examples[target_index_column]]
+        examples["target_indexes"] = target_indexes
+        # if target_images_column is not None:
+        target_images = [[image_transforms(Image.open(os.path.join(args.train_data_dir, image)).convert("RGB")) for image in eval(target_images_)] for target_images_ in examples[target_images_column]]
+        examples["target_images"] = target_images
 
         examples["pixel_values"] = images
+        examples["input_pixel_values"] = input_images
         examples["conditioning_pixel_values"] = conditioning_images
 
         return examples
@@ -526,28 +533,32 @@ def make_train_dataset(args, accelerator):
 def collate_fn(examples):
     pixel_values = torch.stack([example["pixel_values"] for example in examples])
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
+    
+    input_pixel_values = torch.stack([example["input_pixel_values"] for example in examples])
+    input_pixel_values = input_pixel_values.to(memory_format=torch.contiguous_format).float()
 
     conditioning_pixel_values = torch.stack([example["conditioning_pixel_values"] for example in examples])
     conditioning_pixel_values = conditioning_pixel_values.to(memory_format=torch.contiguous_format).float()
     
-    if "target_indexes" in examples[0]:
-        target_indexes = [example["target_indexes"] for example in examples]
-        
-        target_images = [torch.stack([e for e in example["target_images"]]) for example in examples]
-        target_images = [t.to(memory_format=torch.contiguous_format).float() for t in target_images]
-        target_images = torch.stack(target_images, 0)
-        
-        return {
-            "pixel_values": pixel_values,
-            "conditioning_pixel_values": conditioning_pixel_values,
-            "target_indexes": target_indexes,
-            "target_images": target_images,
-        }
-    else:
-        return {
+    # if "target_indexes" in examples[0]:
+    target_indexes = [example["target_indexes"] for example in examples]
+
+    target_images = [torch.stack([e for e in example["target_images"]]) for example in examples]
+    target_images = [t.to(memory_format=torch.contiguous_format).float() for t in target_images]
+    target_images = torch.stack(target_images, 0)
+
+    return {
         "pixel_values": pixel_values,
+        "input_pixel_values": input_pixel_values,
         "conditioning_pixel_values": conditioning_pixel_values,
+        "target_indexes": target_indexes,
+        "target_images": target_images,
     }
+    # else:
+    #     return {
+    #     "pixel_values": pixel_values,
+    #     "conditioning_pixel_values": conditioning_pixel_values,
+    # }
 
 def load_model(cfg,ckpt,strict=True):
     config = OmegaConf.load(cfg)
